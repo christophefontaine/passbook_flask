@@ -2,15 +2,10 @@
 import os
 import re
 from datetime import datetime
-try:
-    # Python 2
-    from urlparse import urlparse
-except ImportError:
-    # Python 3
-    from urllib.parse import urlparse
+from urllib.parse import urlparse
 
 from flask import Flask, request, jsonify
-from flask.ext.sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 
 try:
