@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import httpx
-import io
 import os
 import re
 from datetime import datetime
@@ -79,7 +78,7 @@ class Registration(db.Model):
         return '<Registration %s>' % self.device_library_identifier
 
 
-@app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['GET'])
+@app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['GET'])  # noqa 501
 def show(pass_type_identifier, serial_number):
     """
     Getting the latest version of a Pass
@@ -88,12 +87,12 @@ def show(pass_type_identifier, serial_number):
     pass_type_identifier -- The pass’s type, as specified in the pass
     serial_number -- The unique pass identifier, as specified in the pass
     """
-    p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
-                             serial_number=serial_number).first_or_404()
+    Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
+                         serial_number=serial_number).first_or_404()
 
     return send_file("pkpass/"+serial_number+".pkpass",
-                      mimetype='application/vnd.apple.pkpass',
-                      download_name=serial_number+".pkpass")
+                     mimetype='application/vnd.apple.pkpass',
+                     download_name=serial_number+".pkpass")
 
 
 async def push(pushToken, retry=3):
@@ -110,7 +109,7 @@ async def push(pushToken, retry=3):
     return r
 
 
-@app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['PUT'])
+@app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['PUT'])  # noqa 501
 async def update_pass(pass_type_identifier, serial_number):
     """
     Getting the latest version of a Pass
@@ -120,7 +119,7 @@ async def update_pass(pass_type_identifier, serial_number):
     serial_number -- The unique pass identifier, as specified in the pass
     """
     p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
-                         serial_number=serial_number).first()
+                             serial_number=serial_number).first()
 
     if not p:
         p = Pass(pass_type_identifier, serial_number, None)
@@ -128,24 +127,25 @@ async def update_pass(pass_type_identifier, serial_number):
         db.session.commit()
 
     for r in p.registrations.all():
-        print("device: %s token: %s" % (r.device_library_identifier, r.push_token))
+        print("device: %s token: %s" % (r.device_library_identifier,
+                                        r.push_token))
         asyncio.create_task(push(r.push_token))
         # await push(r.push_token)
-
 
     if 'file' not in request.files:
         print('No file in request')
         return ('KO', 500)
 
     file = request.files['file']
-    file.save(os.path.join(app.config['UPLOAD_FOLDER'], serial_number + '.pkpass' ))
+    file.save(os.path.join(app.config['UPLOAD_FOLDER'],
+                           serial_number + '.pkpass'))
 
     p.updated_at = datetime.utcnow().replace(microsecond=0)
     db.session.commit()
     return ('OK', 201)
 
 
-@app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>', methods=['GET'])
+@app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>', methods=['GET'])  # noqa 501
 def index(device_library_identifier, pass_type_identifier):
     """
     Getting the serial numbers for passes associated with a device
@@ -166,13 +166,13 @@ def index(device_library_identifier, pass_type_identifier):
             device_library_identifier=device_library_identifier)
     if 'passesUpdatedSince' in request.args:
         print('passesUpdatedSince')
-        print('pass updated_at: ' + str (p.updated_at))
+        print('pass updated_at: ' + str(p.updated_at))
         print('request date: ' + str(request.args['passesUpdatedSince']))
-        r = r.filter(Registration.updated_at > datetime.strptime(request.args['passesUpdatedSince'],
-                                                                 '%a, %d %b %Y %H:%M:%S %Z'))
+        r = r.filter(Registration.updated_at >
+                     datetime.strptime(request.args['passesUpdatedSince'],
+                                       '%a, %d %b %Y %H:%M:%S %Z'))
 
     if r:
-        # XXX: Is this the correct return value for serial number?
         return jsonify({
             'lastUpdated': p.updated_at,
             'serialNumbers': [p.serial_number]
@@ -181,8 +181,11 @@ def index(device_library_identifier, pass_type_identifier):
         return ('No Content', 204)
 
 
-@app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>',  methods=['POST'])
-def register_device(device_library_identifier, pass_type_identifier, serial_number):
+@app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>',  # noqa 501
+           methods=['POST'])
+def register_device(device_library_identifier,
+                    pass_type_identifier,
+                    serial_number):
     """
     Registering a device to receive push notifications for a pass
 
@@ -206,18 +209,21 @@ def register_device(device_library_identifier, pass_type_identifier, serial_numb
         db.session.add(p)
 
     try:
-        r = Registration(device_library_identifier, request.json['pushToken'], p)
+        r = Registration(device_library_identifier,
+                         request.json['pushToken'], p)
         print(r)
         db.session.add(r)
         db.session.commit()
     except Exception as e:
-        import pdb; pdb.post_mortem()
         print(str(e))
 
     return ('Created', 201)
 
-@app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>', methods=['DELETE'])
-def unregister_device(device_library_identifier, pass_type_identifier, serial_number):
+@app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>',  # noqa 501
+           methods=['DELETE'])
+def unregister_device(device_library_identifier,
+                      pass_type_identifier,
+                      serial_number):
     """
     Unregistering a device
 
@@ -233,7 +239,7 @@ def unregister_device(device_library_identifier, pass_type_identifier, serial_nu
                                  serial_number=serial_number).first_or_404()
         registrations = p.registrations.filter_by(
             device_library_identifier=device_library_identifier).first_or_404()
-    
+
         db.session.delete(registrations)
         db.session.commit()
     except Exception as e:
@@ -241,26 +247,15 @@ def unregister_device(device_library_identifier, pass_type_identifier, serial_nu
 
     return ('OK', 200)
 
-#@app.route('/passes/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>', methods=['DELETE'])
-#def delete_old(device_library_identifier, pass_type_identifier, serial_number):
-#    return ('OK', 200)
-#
-#
-#@app.route('/passes/v1/log', methods=['POST'])
-#def alog():
-#    print( request.data )
-#    return ('OK', 200)
-#
-#
+
 @app.route('/v1/log', methods=['POST'])
 def log():
-    print( request.data )
+    print(request.data)
     return ('OK', 200)
-
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
-    #with app.app_context():
+    # with app.app_context():
     #    db.create_all()
     app.run(host='0.0.0.0', port=port)
