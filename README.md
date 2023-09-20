@@ -22,34 +22,17 @@ This project is an example implementation of this web service specification in F
 
 ## Requirements
 
-- Python 2.5+
-- PostgreSQL 9.1 running locally ([Postgres.app](http://postgresapp.com) is the
-  easiest way to get a Postgres server running on your Mac)
+- Python 3
+- sqlite
 
 ## Getting Started
 
 ```bash
-$ git clone https://github.com/lithammer/passbook_flask_example.git passbook
+$ git clone https://github.com/christophefontaine/passbook_flask passbook
 $ cd passbook
 $ python app.py
 ```
 
-## Deployment
-
-[Heroku](http://www.heroku.com) is the easiest way to get your app up and
-running. For full instructions on how to get started, check out
-["Getting Started with Python on Heroku"](https://devcenter.heroku.com/articles/python).
-
-Once you've installed the [Heroku Toolbelt](https://toolbelt.heroku.com), and
-have a Heroku account, enter the following commands from the project directory:
-
-```bash
-$ heroku create
-$ git push heroku master
-```
-
-Take the URL from your newly-created Heroku app, and specify that as the
-webservice URL for your Passbook bundle.
 
 ---
 
@@ -136,10 +119,10 @@ DELETE http://example.com/devices/<device_library_identifier>/registrations/<pas
 ---
 
 ## Contact
+Based on the code from Peter Lithammer
+- [https://github.com/lithammer](https://github.com/lithammer)
 
-Peter Lithammer
-
-- [http://github.com/lithammer](http://github.com/lithammer)
+- [https://github.com/christophefontaine](https://github.com/christophefontaine)
 
 ## License
 
