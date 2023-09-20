@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import httpx
 import io
 import os
 import re
 from datetime import datetime
 from urllib.parse import urlparse
+from time import sleep
 
 from flask import Flask, request, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -77,7 +79,6 @@ class Registration(db.Model):
         return '<Registration %s>' % self.device_library_identifier
 
 
-
 @app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['GET'])
 def show(pass_type_identifier, serial_number):
     """
@@ -95,18 +96,22 @@ def show(pass_type_identifier, serial_number):
                       download_name=serial_number+".pkpass")
 
 
-def push(pushToken):
+async def push(pushToken, retry=3):
     ENDPOINT = "api.push.apple.com:443"
     cert = ("wallet.certificate.der", "wallet.private.key")
     with httpx.Client(http2=True, cert=cert) as client:
         r = client.post("https://" + ENDPOINT + "/3/device/" + pushToken,
                         data={'aps': {}},
                         headers={'Content-Type': 'application/json'})
+
+    if r.status_code != 200 and retry > 0:
+        sleep(1)
+        push(pushToken, retry-1)
     return r
 
 
 @app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['PUT'])
-def update_pass(pass_type_identifier, serial_number):
+async def update_pass(pass_type_identifier, serial_number):
     """
     Getting the latest version of a Pass
 
@@ -124,7 +129,8 @@ def update_pass(pass_type_identifier, serial_number):
 
     for r in p.registrations.all():
         print("device: %s token: %s" % (r.device_library_identifier, r.push_token))
-        push(r.push_token)
+        asyncio.create_task(push(r.push_token))
+        # await push(r.push_token)
 
 
     if 'file' not in request.files:
