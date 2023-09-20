@@ -4,7 +4,7 @@ import unittest
 import tempfile
 from datetime import datetime
 
-from flask.ext.sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy
 
 from app import app, db, Pass, Registration
 
@@ -19,11 +19,13 @@ class PassbookTestCase(unittest.TestCase):
         app.config['TESTING'] = True
         self.app = app.test_client()
 
-        SQLAlchemy.create_all(db)
+        # with app.app_context()
+        #     
+        #    SQLAlchemy.create_all(db)
 
     def tearDown(self):
         os.close(self.db_fd)
-        os.unlink(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', ''))
+        # os.unlink(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', ''))
 
     def test_add_pass_and_registrations(self):
         data = {
