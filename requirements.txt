@@ -1,4 +1,6 @@
 Flask
+Flask[asyncio]
 Flask-SQLAlchemy
+httpx[http2]
 requests
 waitress

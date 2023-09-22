@@ -7,7 +7,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 from time import sleep
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 
@@ -35,7 +35,7 @@ db = SQLAlchemy(app)
 
 class Pass(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    pass_type_identifier = db.Column(db.String(255), unique=True)
+    pass_type_identifier = db.Column(db.String(255), unique=False)
     serial_number = db.Column(db.String(255), unique=True)
     data = db.Column(db.PickleType)
     created_at = db.Column(db.DateTime)
@@ -87,25 +87,32 @@ def show(pass_type_identifier, serial_number):
     pass_type_identifier -- The pass’s type, as specified in the pass
     serial_number -- The unique pass identifier, as specified in the pass
     """
-    Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
-                         serial_number=serial_number).first_or_404()
-
-    return send_file("pkpass/"+serial_number+".pkpass",
+    p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
+                             serial_number=serial_number).first_or_404()
+    response = make_response(send_file("pkpass/"+serial_number+".pkpass",
                      mimetype='application/vnd.apple.pkpass',
-                     download_name=serial_number+".pkpass")
+                     download_name=serial_number+".pkpass"))
+    print(str(response.headers))
+    # Need to send since unix epoch in seconds
+    response.headers['Last-Modified'] = p.updated_at.strftime('%a, %d %b %Y %H:%M:%S %Z')
+#    response.headers['Last-Modified'] = int(p.updated_at.timestamp())
+    return response
 
 
 async def push(pushToken, retry=3):
     ENDPOINT = "api.push.apple.com:443"
+    ENDPOINT = "api.push.apple.com:2197"
     cert = ("wallet.certificate.der", "wallet.private.key")
     with httpx.Client(http2=True, cert=cert) as client:
+#                        data={'aps': {'apns-priority': 10, 'apns-push-type': 'alert' }},
         r = client.post("https://" + ENDPOINT + "/3/device/" + pushToken,
                         data={'aps': {}},
                         headers={'Content-Type': 'application/json'})
 
     if r.status_code != 200 and retry > 0:
         sleep(1)
-        push(pushToken, retry-1)
+        r = await push(pushToken, retry-1)
+    print(r)
     return r
 
 
@@ -256,6 +263,6 @@ def log():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
-    # with app.app_context():
-    #    db.create_all()
+    with app.app_context():
+        db.create_all()
     app.run(host='0.0.0.0', port=port)
