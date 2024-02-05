@@ -175,6 +175,7 @@ def index(device_library_identifier, pass_type_identifier):
         print('passesUpdatedSince')
         print('pass updated_at: ' + str(p.updated_at))
         print('request date: ' + str(request.args['passesUpdatedSince']))
+
         r = r.filter(Registration.updated_at >
                      datetime.strptime(request.args['passesUpdatedSince'],
                                        '%a, %d %b %Y %H:%M:%S %Z'))
@@ -204,10 +205,17 @@ def register_device(device_library_identifier,
                                  the pass
     """
 
-    p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
-                             serial_number=serial_number).first()
-    r = p.registrations.filter_by(
-        device_library_identifier=device_library_identifier).first()
+    try:
+        p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
+                                 serial_number=serial_number).first()
+    except:
+        p = None
+    try:
+        r = p.registrations.filter_by(
+            device_library_identifier=device_library_identifier).first()
+    except:
+        r = None
+
     if p and r:
         return ('', 200)  # Already exists
 
@@ -261,6 +269,11 @@ def log():
     return ('OK', 200)
 
 
+#@app.teardown_appcontext
+#def close_connection(exception):
+#    with app.app_context():
+#        db.close()
+#
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     with app.app_context():

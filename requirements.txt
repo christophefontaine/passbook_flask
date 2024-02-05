@@ -1,6 +1,7 @@
 Flask
-Flask[asyncio]
+Flask[async]
 Flask-SQLAlchemy
 httpx[http2]
 requests
 waitress
+pyuwsgi
