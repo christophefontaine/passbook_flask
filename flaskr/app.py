@@ -6,6 +6,9 @@ import re
 from datetime import datetime
 from urllib.parse import urlparse
 from time import sleep
+import uuid
+import json
+import gzip
 
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
@@ -56,6 +59,9 @@ class Pass(db.Model):
     def __repr__(self):
         return '<Pass %s>' % self.pass_type_identifier
 
+    def __str__(self):
+        return f'{self.pass_type_identifier} - {self.serial_number} updated at: {self.updated_at}'
+
 
 class Registration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -77,6 +83,9 @@ class Registration(db.Model):
     def __repr__(self):
         return '<Registration %s>' % self.device_library_identifier
 
+    def __str__(self):
+        return f'Registration {self.device_library_identifier} with push token: {self.push_token} for pass {self.p}'
+
 
 @app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['GET'])  # noqa 501
 def show(pass_type_identifier, serial_number):
@@ -89,30 +98,39 @@ def show(pass_type_identifier, serial_number):
     """
     p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
                              serial_number=serial_number).first_or_404()
-    response = make_response(send_file("pkpass/"+serial_number+".pkpass",
-                     mimetype='application/vnd.apple.pkpass',
-                     download_name=serial_number+".pkpass"))
-    print(str(response.headers))
-    # Need to send since unix epoch in seconds
-    response.headers['Last-Modified'] = p.updated_at.strftime('%a, %d %b %Y %H:%M:%S %Z')
-#    response.headers['Last-Modified'] = int(p.updated_at.timestamp())
-    return response
+    if 'if-modified-since' in request.headers:
+        print(f'show {p}')
+        if p.updated_at <= datetime.fromisoformat(request.headers['if-modified-since']):
+            p = None
+
+    if p:
+        response = make_response(send_file("pkpass/"+serial_number+".pkpass",
+                         mimetype='application/vnd.apple.pkpass',
+                         download_name=serial_number+".pkpass"))
+        # TODO
+        response.headers['Last-Modified'] = p.updated_at.isoformat()
+        response.headers['Last-Modified'] = datetime.utcnow().replace(microsecond=0).isoformat()
+        print(str(response.headers))
+        return response
+    else:
+        return ('No Content', 304)
+
+
+ENDPOINT = "api.push.apple.com:443"
+cert = ("wallet.certificate.der", "wallet.private.key")
+http_client = httpx.Client(http2=True, cert=cert)
 
 
 async def push(pushToken, retry=3):
-    ENDPOINT = "api.push.apple.com:443"
-    ENDPOINT = "api.push.apple.com:2197"
-    cert = ("wallet.certificate.der", "wallet.private.key")
-    with httpx.Client(http2=True, cert=cert) as client:
-#                        data={'aps': {'apns-priority': 10, 'apns-push-type': 'alert' }},
-        r = client.post("https://" + ENDPOINT + "/3/device/" + pushToken,
-                        data={'aps': {}},
-                        headers={'Content-Type': 'application/json'})
+    global http_client
+    if http_client.is_closed == True:
+        http_client = httpx.Client(http2=True, cert=cert)
 
-    if r.status_code != 200 and retry > 0:
-        sleep(1)
-        r = await push(pushToken, retry-1)
-    print(r)
+    r = http_client.post("https://" + ENDPOINT + "/3/device/" + pushToken,
+                    data={'aps': {}},
+                    headers={'apns-topic': 'pass.membership.lebarp',
+                             'apns-priority': '10', 'apns-push-type': 'alert'})
+    print('APNS: ' + str(r))
     return r
 
 
@@ -125,30 +143,33 @@ async def update_pass(pass_type_identifier, serial_number):
     pass_type_identifier -- The pass’s type, as specified in the pass
     serial_number -- The unique pass identifier, as specified in the pass
     """
-    p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
-                             serial_number=serial_number).first()
-
-    if not p:
-        p = Pass(pass_type_identifier, serial_number, None)
-        db.session.add(p)
-        db.session.commit()
-
-    for r in p.registrations.all():
-        print("device: %s token: %s" % (r.device_library_identifier,
-                                        r.push_token))
-        asyncio.create_task(push(r.push_token))
-        # await push(r.push_token)
-
     if 'file' not in request.files:
         print('No file in request')
         return ('KO', 500)
+
+    p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
+                             serial_number=serial_number).first()
+
+    if p:
+        print(f'PUT {p} before update')
+        p.updated_at = datetime.utcnow()
+    else:
+        p = Pass(pass_type_identifier, serial_number, None)
+        db.session.add(p)
+    db.session.commit()
+    p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
+                             serial_number=serial_number).first()
+    print(f'PUT {p} after update')
 
     file = request.files['file']
     file.save(os.path.join(app.config['UPLOAD_FOLDER'],
                            serial_number + '.pkpass'))
 
-    p.updated_at = datetime.utcnow().replace(microsecond=0)
-    db.session.commit()
+    for r in p.registrations.all():
+        print("device: %s token: %s" % (r.device_library_identifier,
+                                        r.push_token))
+#        asyncio.create_task(push(r.push_token))
+#        await push(r.push_token)
     return ('OK', 201)
 
 
@@ -166,27 +187,26 @@ def index(device_library_identifier, pass_type_identifier):
     that have been updated since the time indicated by tag. Otherwise, return
     all passes.
     """
-    p = Pass.query.filter_by(
-            pass_type_identifier=pass_type_identifier).first_or_404()
-
-    r = p.registrations.filter_by(
-            device_library_identifier=device_library_identifier)
+    print(f'{request.url}')
+    print(f'index {device_library_identifier}/{pass_type_identifier}')
+    rs = Registration.query.filter_by(device_library_identifier=device_library_identifier).all()
+    serial_numbers = []
     if 'passesUpdatedSince' in request.args:
-        print('passesUpdatedSince')
-        print('pass updated_at: ' + str(p.updated_at))
-        print('request date: ' + str(request.args['passesUpdatedSince']))
+        for r in rs:
+            print('pass updated_at: ' + str(r.p.updated_at))
+            print('request date: ' + str(request.args['passesUpdatedSince']))       
+#            if r.p.updated_at <= datetime.fromisoformat(request.args['passesUpdatedSince']):
+            serial_numbers.append(r.p.serial_number)
 
-        r = r.filter(Registration.updated_at >
-                     datetime.strptime(request.args['passesUpdatedSince'],
-                                       '%a, %d %b %Y %H:%M:%S %Z'))
-
-    if r:
+    print(f'index updated: {serial_numbers}')
+    if len(serial_numbers) > 0:
         return jsonify({
-            'lastUpdated': p.updated_at,
-            'serialNumbers': [p.serial_number]
+    #        'lastUpdated': p.updated_at.isoformat(),
+            'lastUpdated': datetime.utcnow().isoformat(),
+            'serialNumbers': serial_numbers
         })
     else:
-        return ('No Content', 204)
+        return ('', 204)
 
 
 @app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>',  # noqa 501
@@ -210,6 +230,7 @@ def register_device(device_library_identifier,
                                  serial_number=serial_number).first()
     except:
         p = None
+
     try:
         r = p.registrations.filter_by(
             device_library_identifier=device_library_identifier).first()
@@ -217,22 +238,27 @@ def register_device(device_library_identifier,
         r = None
 
     if p and r:
+        print(r)
         return ('', 200)  # Already exists
 
     if not p:
         p = Pass(pass_type_identifier, serial_number, None)
         db.session.add(p)
+        db.session.commit()
 
     try:
         r = Registration(device_library_identifier,
                          request.json['pushToken'], p)
+        print(f"New registration:  {request.json['pushToken']} for pass {p} ")
         print(r)
         db.session.add(r)
         db.session.commit()
     except Exception as e:
         print(str(e))
+        return ('Internal Error', 500)
 
     return ('Created', 201)
+
 
 @app.route('/v1/devices/<device_library_identifier>/registrations/<pass_type_identifier>/<serial_number>',  # noqa 501
            methods=['DELETE'])
