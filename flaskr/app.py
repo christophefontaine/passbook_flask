@@ -10,6 +10,7 @@ import uuid
 import json
 import gzip
 
+from asgiref.wsgi import WsgiToAsgi
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
@@ -36,6 +37,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE
 app.config['UPLOAD_FOLDER'] = "./pkpass/"
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 db = SQLAlchemy(app)
+
+asgi_app = WsgiToAsgi(app)
+
 
 
 class Pass(db.Model):
@@ -102,8 +106,12 @@ def show(pass_type_identifier, serial_number):
                              serial_number=serial_number).first_or_404()
     if 'if-modified-since' in request.headers:
         print(f'show {p}')
-        if p.updated_at <= datetime.fromisoformat(request.headers['if-modified-since']):
-            p = None
+        try:
+            if p.updated_at <= datetime.fromisoformat(request.headers['if-modified-since']):
+                p = None
+        except Exception as e:
+            print(f'{e}')
+            pass
 
     if p:
         response = make_response(send_file("pkpass/"+serial_number+".pkpass",
@@ -118,26 +126,7 @@ def show(pass_type_identifier, serial_number):
         return ('No Content', 304)
 
 
-#ENDPOINT = "api.push.apple.com:443"
-#cert = ("wallet.certificate.der", "wallet.private.key")
-#http_client = httpx.Client(http2=True, cert=cert)
-
-
-async def push(pushToken, retry=3):
-    global http_client
-    if http_client.is_closed == True:
-        http_client = httpx.Client(http2=True, cert=cert)
-
-    r = http_client.post("https://" + ENDPOINT + "/3/device/" + pushToken,
-                    data={'aps': {}},
-                    headers={'apns-topic': 'pass.membership.lebarp',
-                             'apns-priority': '10', 'apns-push-type': 'alert'})
-    print('APNS: ' + str(r))
-    return r
-
-
 @app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['PUT'])  # noqa 501
-#async def update_pass(pass_type_identifier, serial_number):
 async def update_pass(pass_type_identifier, serial_number):
     """
     Getting the latest version of a Pass
