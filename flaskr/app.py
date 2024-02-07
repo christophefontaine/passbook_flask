@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
-import httpx
+# import httpx
 import os
 import re
 from datetime import datetime
@@ -13,6 +13,8 @@ import gzip
 from flask import Flask, request, jsonify, send_file, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
+
+from apns import notify
 
 
 try:
@@ -116,9 +118,9 @@ def show(pass_type_identifier, serial_number):
         return ('No Content', 304)
 
 
-ENDPOINT = "api.push.apple.com:443"
-cert = ("wallet.certificate.der", "wallet.private.key")
-http_client = httpx.Client(http2=True, cert=cert)
+#ENDPOINT = "api.push.apple.com:443"
+#cert = ("wallet.certificate.der", "wallet.private.key")
+#http_client = httpx.Client(http2=True, cert=cert)
 
 
 async def push(pushToken, retry=3):
@@ -135,6 +137,7 @@ async def push(pushToken, retry=3):
 
 
 @app.route('/v1/passes/<pass_type_identifier>/<serial_number>', methods=['PUT'])  # noqa 501
+#async def update_pass(pass_type_identifier, serial_number):
 async def update_pass(pass_type_identifier, serial_number):
     """
     Getting the latest version of a Pass
@@ -168,8 +171,8 @@ async def update_pass(pass_type_identifier, serial_number):
     for r in p.registrations.all():
         print("device: %s token: %s" % (r.device_library_identifier,
                                         r.push_token))
-#        asyncio.create_task(push(r.push_token))
-#        await push(r.push_token)
+        await notify(r.push_token)
+
     return ('OK', 201)
 
 
