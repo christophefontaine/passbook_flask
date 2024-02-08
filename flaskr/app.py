@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 # import httpx
+import logging
 import os
 import re
 from datetime import datetime
@@ -179,22 +180,26 @@ def index(device_library_identifier, pass_type_identifier):
     that have been updated since the time indicated by tag. Otherwise, return
     all passes.
     """
-    print(f'{request.url}')
+    print(f'index {request.url} ? {request.args}')
     print(f'index {device_library_identifier}/{pass_type_identifier}')
     rs = Registration.query.filter_by(device_library_identifier=device_library_identifier).all()
+    lastUpdated = datetime(1970, 1, 1)
     serial_numbers = []
-    if 'passesUpdatedSince' in request.args:
-        for r in rs:
-            print('pass updated_at: ' + str(r.p.updated_at))
-            print('request date: ' + str(request.args['passesUpdatedSince']))       
-#            if r.p.updated_at <= datetime.fromisoformat(request.args['passesUpdatedSince']):
+    try:
+        passesUpdatedSince = datetime.fromisoformat(request.args['passesUpdatedSince'])
+    except:
+        passesUpdatedSince = datetime(1970, 1, 1)
+
+    for r in rs:
+        if passesUpdatedSince < r.p.updated_at:
             serial_numbers.append(r.p.serial_number)
+            lastUpdated = r.p.updated_at if r.p.updated_at > lastUpdated else lastUpdated
 
     print(f'index updated: {serial_numbers}')
     if len(serial_numbers) > 0:
         return jsonify({
-    #        'lastUpdated': p.updated_at.isoformat(),
-            'lastUpdated': datetime.utcnow().isoformat(),
+            'lastUpdated': lastUpdated.isoformat(),
+     #       'lastUpdated': datetime.utcnow().isoformat(),
             'serialNumbers': serial_numbers
         })
     else:
@@ -217,6 +222,7 @@ def register_device(device_library_identifier,
                                  the pass
     """
 
+    logging.info(f'register {device_library_identifier} {pass_type_identifier} {serial_number}')
     try:
         p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
                                  serial_number=serial_number).first()
@@ -275,8 +281,15 @@ def unregister_device(device_library_identifier,
 
         db.session.delete(registrations)
         db.session.commit()
+
+        rs = Registration.query.filter_by(device_library_identifier=device_library_identifier).all()
+        logging.info(f'{rs}')
+        for r in rs:
+            logging.info(f'{r} {r.p}')
+
     except Exception as e:
         print(str(e))
+        logging.error(str(e))
 
     return ('OK', 200)
 
