@@ -112,7 +112,6 @@ def show(pass_type_identifier, serial_number):
                 p = None
         except Exception as e:
             print(f'{e}')
-            pass
 
     if p:
         response = make_response(send_file("pkpass/"+serial_number+".pkpass",
@@ -199,7 +198,6 @@ def index(device_library_identifier, pass_type_identifier):
     if len(serial_numbers) > 0:
         return jsonify({
             'lastUpdated': lastUpdated.isoformat(),
-     #       'lastUpdated': datetime.utcnow().isoformat(),
             'serialNumbers': serial_numbers
         })
     else:
