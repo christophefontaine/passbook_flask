@@ -105,6 +105,9 @@ def show(pass_type_identifier, serial_number):
     """
     p = Pass.query.filter_by(pass_type_identifier=pass_type_identifier,
                              serial_number=serial_number).first_or_404()
+
+    
+    print(f'show {p}')
     if 'if-modified-since' in request.headers:
         print(f'show {p}')
         try:
@@ -135,6 +138,12 @@ async def update_pass(pass_type_identifier, serial_number):
     pass_type_identifier -- The pass’s type, as specified in the pass
     serial_number -- The unique pass identifier, as specified in the pass
     """
+    if 'auth-token' not in request.headers:
+        return ('Unauthorized', 401)
+
+    if request.headers['auth-token'] != '33586942-2f47-4d1b-9879-eddec7166725':
+        return ('Forbidden', 403)
+
     if 'file' not in request.files:
         print('No file in request')
         return ('KO', 500)
@@ -182,14 +191,16 @@ def index(device_library_identifier, pass_type_identifier):
     print(f'index {request.url} ? {request.args}')
     print(f'index {device_library_identifier}/{pass_type_identifier}')
     rs = Registration.query.filter_by(device_library_identifier=device_library_identifier).all()
-    lastUpdated = datetime(1970, 1, 1)
+    lastUpdated = datetime(2023, 1, 1)
     serial_numbers = []
     try:
         passesUpdatedSince = datetime.fromisoformat(request.args['passesUpdatedSince'])
     except:
-        passesUpdatedSince = datetime(1970, 1, 1)
+        passesUpdatedSince = datetime(2023, 1, 1)
 
     for r in rs:
+        print(f'serial number: {r.p.serial_number}')
+        print(f'{passesUpdatedSince} < {r.p.updated_at} {passesUpdatedSince < r.p.updated_at}')
         if passesUpdatedSince < r.p.updated_at:
             serial_numbers.append(r.p.serial_number)
             lastUpdated = r.p.updated_at if r.p.updated_at > lastUpdated else lastUpdated
@@ -296,6 +307,43 @@ def unregister_device(device_library_identifier,
 def log():
     print(request.data)
     return ('OK', 200)
+
+
+@app.route('/v1/remote-sync/members/<file_name>', methods=['PUT'])
+def remote_sync_update_member(file_name):
+    """
+    Update members list and pictures
+    Keyword arguments:
+    """
+    if 'auth-token' not in request.headers:
+        return ('Unauthorized', 401)
+
+    if request.headers['auth-token'] != 'bcac8b48-1dfb-49b6-9a89-30d925f0d8d8':
+        return ('Forbidden', 403)
+
+    if 'file' not in request.files:
+        print('No file in request')
+        return ('KO', 500)
+
+    file = request.files['file']
+    file.save(os.path.join('remote-sync', file_name))
+    return ('OK', 201)
+
+@app.route('/v1/remote-sync/members/<file_name>', methods=['GET'])
+def remote_sync_get_member(file_name):
+    """
+    """
+    if 'auth-token' not in request.headers:
+        return ('Unauthorized', 401)
+
+    if request.headers['auth-token'] != 'bcac8b48-1dfb-49b6-9a89-30d925f0d8d8':
+        return ('Forbidden', 403)
+
+    response = make_response(send_file(os.path.join('remote-sync', file_name),
+                             download_name=file_name))
+
+    response.headers['Last-Modified'] = os.path.getmtime(os.path.join('remote-sync', file_name))
+    return response
 
 
 #@app.teardown_appcontext
